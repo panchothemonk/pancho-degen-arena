@@ -9,6 +9,8 @@ npm-debug.log*
 .dev.vars
 onchain/target
 onchain/.anchor
+**/*-keypair.json
+**/id.json
 *.log
 *.pid
 *.db
