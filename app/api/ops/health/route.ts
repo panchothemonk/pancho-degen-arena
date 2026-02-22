@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/api-guards";
 import { readSimLedger, readSimRoundSettlement } from "@/lib/sim-ledger";
 import { auditLog } from "@/lib/audit";
+import { safeHeaderSecretMatch } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -31,7 +32,7 @@ function isAuthorized(req: Request): boolean {
   if (!key) {
     return process.env.NODE_ENV !== "production";
   }
-  return req.headers.get("x-ops-key") === key;
+  return safeHeaderSecretMatch(key, req.headers.get("x-ops-key"));
 }
 
 export async function GET(req: Request) {

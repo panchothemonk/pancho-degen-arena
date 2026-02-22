@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/api-guards";
 import { readSimLedger, readSimRoundSettlement } from "@/lib/sim-ledger";
+import { safeHeaderSecretMatch } from "@/lib/auth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -12,7 +13,7 @@ function isAuthorized(req: Request): boolean {
   if (!key) {
     return process.env.NODE_ENV !== "production";
   }
-  return req.headers.get("x-ops-key") === key;
+  return safeHeaderSecretMatch(key, req.headers.get("x-ops-key"));
 }
 
 function distinctRecentRoundIds(entries: Awaited<ReturnType<typeof readSimLedger>>["entries"], limit: number): string[] {

@@ -1,15 +1,12 @@
 import { NextResponse } from "next/server";
 import { auditLog } from "@/lib/audit";
+import { safeHeaderSecretMatch } from "@/lib/auth";
 import { settleDueSimRounds } from "@/lib/sim-settlement";
 
 export const runtime = "nodejs";
 
 function isAuthorized(req: Request): boolean {
-  const key = process.env.SIM_SETTLE_API_KEY;
-  if (!key) {
-    return false;
-  }
-  return req.headers.get("x-sim-settle-key") === key;
+  return safeHeaderSecretMatch(process.env.SIM_SETTLE_API_KEY, req.headers.get("x-sim-settle-key"));
 }
 
 export async function POST(req: Request) {
