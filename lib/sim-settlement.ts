@@ -97,14 +97,8 @@ async function settleRound(entries: SimEntry[]): Promise<SimRoundSettlementSnaps
     } else if (endSnapshot.price < startSnapshot.price) {
       winnerSide = "DOWN";
     } else {
-      const latest = await fetchOracleSnapshot(market);
-      if (latest.price > startSnapshot.price) {
-        winnerSide = "UP";
-      } else if (latest.price < startSnapshot.price) {
-        winnerSide = "DOWN";
-      } else {
-        mode = "REFUND";
-      }
+      // Tie at scheduled timestamps is always a refund.
+      mode = "REFUND";
     }
   }
 

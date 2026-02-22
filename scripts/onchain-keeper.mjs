@@ -5,14 +5,19 @@ import { clusterApiUrl, Connection, Keypair, PublicKey, SystemProgram, Transacti
 const PROGRAM_ID = new PublicKey(process.env.PANCHO_PROGRAM_ID ?? "52nguesHaBuF4psFr2uybVnW4angLW2ZtsBRSRmdF8k3");
 const RPC_URL = process.env.SOLANA_RPC_URL ?? process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? clusterApiUrl("devnet");
 const INTERVAL_MS = Number(process.env.ONCHAIN_KEEPER_INTERVAL_MS ?? 4000);
+const RUN_ONCE = process.env.PANCHO_KEEPER_ONCE === "true";
 
 const OPEN_SECONDS = Number(process.env.PANCHO_OPEN_SECONDS ?? 60);
 const LOCK_SECONDS = Number(process.env.PANCHO_LOCK_SECONDS ?? 60);
 const ENTRY_CYCLE_SECONDS = OPEN_SECONDS + LOCK_SECONDS;
 const SETTLEMENT_SECONDS = Number(process.env.PANCHO_SETTLEMENT_SECONDS ?? 300);
+const LOCK_GRACE_SECONDS = Number(process.env.PANCHO_LOCK_GRACE_SECONDS ?? 180);
+const BACKFILL_LIMIT = Number(process.env.PANCHO_KEEPER_BACKFILL_LIMIT ?? 80);
 
 const FEE_BPS = Number(process.env.PANCHO_FEE_BPS ?? 600);
-const ORACLE_MAX_AGE_SEC = Number(process.env.PANCHO_ORACLE_MAX_AGE_SEC ?? 120);
+const ORACLE_MAX_AGE_SLOTS = Number(
+  process.env.PANCHO_ORACLE_MAX_AGE_SLOTS ?? process.env.PANCHO_ORACLE_MAX_AGE_SEC ?? 120
+);
 const AUTO_INIT_CONFIG = process.env.PANCHO_AUTO_INIT_CONFIG === "true";
 
 const MARKETS = [
@@ -80,12 +85,22 @@ function deriveVaultPda(round, side) {
   return PublicKey.findProgramAddressSync([Buffer.from("vault"), round.toBuffer(), Buffer.from([side])], PROGRAM_ID)[0];
 }
 
-function encodeInitializeConfig({ feeBps, oracleMaxAgeSec, oracleProgram }) {
-  const data = Buffer.alloc(8 + 2 + 4 + 32);
+function encodeInitializeConfig({
+  feeBps,
+  oracleMaxAgeSlots,
+  oracleProgram,
+  oracleAccountSol,
+  oracleAccountBtc,
+  oracleAccountEth
+}) {
+  const data = Buffer.alloc(8 + 2 + 4 + 32 + 32 + 32 + 32);
   ixDiscriminator("initialize_config").copy(data, 0);
   data.writeUInt16LE(feeBps, 8);
-  data.writeUInt32LE(oracleMaxAgeSec, 10);
+  data.writeUInt32LE(oracleMaxAgeSlots, 10);
   new PublicKey(oracleProgram).toBuffer().copy(data, 14);
+  new PublicKey(oracleAccountSol).toBuffer().copy(data, 46);
+  new PublicKey(oracleAccountBtc).toBuffer().copy(data, 78);
+  new PublicKey(oracleAccountEth).toBuffer().copy(data, 110);
   return data;
 }
 
@@ -126,7 +141,8 @@ async function sendIx(connection, payer, instruction) {
 
 async function fetchConfig(connection, configPda) {
   const info = await connection.getAccountInfo(configPda, "confirmed");
-  if (!info || info.data.length < 120) {
+  // GlobalConfig account size is 8-byte discriminator + 200-byte payload.
+  if (!info || info.data.length < 208) {
     return null;
   }
   const data = Buffer.from(info.data);
@@ -134,9 +150,12 @@ async function fetchConfig(connection, configPda) {
     admin: new PublicKey(data.subarray(8, 40)),
     treasury: new PublicKey(data.subarray(40, 72)),
     oracleProgram: new PublicKey(data.subarray(72, 104)),
-    feeBps: data.readUInt16LE(104),
-    oracleMaxAgeSec: data.readUInt32LE(106),
-    paused: data.readUInt8(110) === 1
+    oracleAccountSol: new PublicKey(data.subarray(104, 136)),
+    oracleAccountBtc: new PublicKey(data.subarray(136, 168)),
+    oracleAccountEth: new PublicKey(data.subarray(168, 200)),
+    feeBps: data.readUInt16LE(200),
+    oracleMaxAgeSlots: data.readUInt32LE(202),
+    paused: data.readUInt8(206) === 1
   };
 }
 
@@ -204,8 +223,13 @@ async function maybeInitializeConfig(connection, payer, configPda) {
 
   const treasury = process.env.PANCHO_TREASURY_WALLET;
   const oracleProgram = process.env.PANCHO_ORACLE_PROGRAM_ID;
-  if (!treasury || !oracleProgram) {
-    throw new Error("Missing PANCHO_TREASURY_WALLET or PANCHO_ORACLE_PROGRAM_ID for config initialization.");
+  const oracleAccountSol = process.env.PANCHO_ORACLE_ACCOUNT_SOL;
+  const oracleAccountBtc = process.env.PANCHO_ORACLE_ACCOUNT_BTC;
+  const oracleAccountEth = process.env.PANCHO_ORACLE_ACCOUNT_ETH;
+  if (!treasury || !oracleProgram || !oracleAccountSol || !oracleAccountBtc || !oracleAccountEth) {
+    throw new Error(
+      "Missing PANCHO_TREASURY_WALLET/PANCHO_ORACLE_PROGRAM_ID/PANCHO_ORACLE_ACCOUNT_SOL/PANCHO_ORACLE_ACCOUNT_BTC/PANCHO_ORACLE_ACCOUNT_ETH for config initialization."
+    );
   }
 
   const ix = new TransactionInstruction({
@@ -218,8 +242,11 @@ async function maybeInitializeConfig(connection, payer, configPda) {
     ],
     data: encodeInitializeConfig({
       feeBps: FEE_BPS,
-      oracleMaxAgeSec: ORACLE_MAX_AGE_SEC,
-      oracleProgram
+      oracleMaxAgeSlots: ORACLE_MAX_AGE_SLOTS,
+      oracleProgram,
+      oracleAccountSol,
+      oracleAccountBtc,
+      oracleAccountEth
     })
   });
 
@@ -284,6 +311,7 @@ async function maybeLockRound(connection, payer, configPda, market, roundIdSec) 
 
   const now = Math.floor(Date.now() / 1000);
   if (now < round.lockTs) return;
+  if (now > round.lockTs + LOCK_GRACE_SECONDS) return;
 
   const oraclePrice = getOracleAccount(market);
   const ix = new TransactionInstruction({
@@ -340,6 +368,20 @@ async function keeperTick(connection, payer, configPda) {
   const nowSec = Math.floor(Date.now() / 1000);
   const rounds = candidateRoundIds(nowSec);
   const currentCycle = Math.floor(nowSec / ENTRY_CYCLE_SECONDS) * ENTRY_CYCLE_SECONDS;
+  const allProgramAccounts = await connection.getProgramAccounts(PROGRAM_ID, { commitment: "confirmed" });
+  const backfillByMarket = new Map();
+  for (const account of allProgramAccounts) {
+    const parsed = parseRound(account.account.data);
+    if (!parsed) continue;
+    if (parsed.status === ROUND_STATUS_SETTLED) continue;
+    const list = backfillByMarket.get(parsed.market) ?? [];
+    list.push(parsed.roundId);
+    backfillByMarket.set(parsed.market, list);
+  }
+  for (const [marketCode, list] of backfillByMarket.entries()) {
+    list.sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
+    backfillByMarket.set(marketCode, list.slice(-BACKFILL_LIMIT));
+  }
 
   async function safeStep(stepLabel, fn) {
     try {
@@ -363,7 +405,9 @@ async function keeperTick(connection, payer, configPda) {
       );
     });
 
-    for (const roundIdSec of rounds) {
+    const backfill = (backfillByMarket.get(market.code) ?? []).map((id) => Number(id));
+    const plan = [...new Set([...rounds, ...backfill])];
+    for (const roundIdSec of plan) {
       await safeStep(`lock ${market.key} ${roundIdSec}`, async () => {
         await maybeLockRound(connection, payer, configPda, market, roundIdSec);
       });
@@ -384,10 +428,14 @@ async function main() {
   console.log(`[onchain-keeper] program=${PROGRAM_ID.toBase58()}`);
   console.log(`[onchain-keeper] config=${configPda.toBase58()}`);
   console.log(
-    `[onchain-keeper] cadence=${ENTRY_CYCLE_SECONDS}s cycle (${OPEN_SECONDS}s open + ${LOCK_SECONDS}s lock), settle=${SETTLEMENT_SECONDS}s`
+    `[onchain-keeper] cadence=${ENTRY_CYCLE_SECONDS}s cycle (${OPEN_SECONDS}s open + ${LOCK_SECONDS}s lock), settle=${SETTLEMENT_SECONDS}s, lockGrace=${LOCK_GRACE_SECONDS}s, backfill=${BACKFILL_LIMIT}`
   );
 
   await keeperTick(connection, payer, configPda);
+  if (RUN_ONCE) {
+    console.log("[onchain-keeper] run-once completed");
+    return;
+  }
   setInterval(async () => {
     try {
       await keeperTick(connection, payer, configPda);

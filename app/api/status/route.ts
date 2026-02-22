@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { checkRateLimit, getClientIp, rateLimitExceededResponse } from "@/lib/api-guards";
 import { readSimLedger, readSimRoundSettlement } from "@/lib/sim-ledger";
+import { settleDueSimRounds } from "@/lib/sim-settlement";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,8 +18,12 @@ type PublicStatus = {
 
 const STATUS_CACHE_MS = Number(process.env.PANCHO_STATUS_CACHE_MS ?? 8_000);
 const DUE_SCAN_LIMIT = Number(process.env.PANCHO_STATUS_DUE_SCAN_LIMIT ?? 300);
+const AUTOFIX_COOLDOWN_MS = Number(process.env.PANCHO_STATUS_AUTOFIX_COOLDOWN_MS ?? 15_000);
+const AUTOFIX_SETTLE_LIMIT = Number(process.env.PANCHO_STATUS_AUTOFIX_SETTLE_LIMIT ?? 120);
 
 let cachedStatus: { atMs: number; data: PublicStatus } | null = null;
+let statusAutofixInFlight: Promise<void> | null = null;
+let lastAutofixAtMs = 0;
 
 function flags() {
   return {
@@ -73,6 +78,28 @@ async function computeStatus(): Promise<PublicStatus> {
   };
 }
 
+async function maybeAutoFixSettlements(currentStatus: PublicStatus): Promise<void> {
+  if (currentStatus.settlementPaused) return;
+  if (currentStatus.pendingDueRounds <= 0) return;
+
+  const nowMs = Date.now();
+  if (nowMs - lastAutofixAtMs < AUTOFIX_COOLDOWN_MS) return;
+  if (statusAutofixInFlight) {
+    await statusAutofixInFlight;
+    return;
+  }
+
+  lastAutofixAtMs = nowMs;
+  statusAutofixInFlight = (async () => {
+    try {
+      await settleDueSimRounds(AUTOFIX_SETTLE_LIMIT);
+    } finally {
+      statusAutofixInFlight = null;
+    }
+  })();
+  await statusAutofixInFlight;
+}
+
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
@@ -92,7 +119,11 @@ export async function GET(req: Request) {
       });
     }
 
-    const status = await computeStatus();
+    let status = await computeStatus();
+    if (status.pendingDueRounds > 0 && status.status === "degraded") {
+      await maybeAutoFixSettlements(status);
+      status = await computeStatus();
+    }
     cachedStatus = { atMs: nowMs, data: status };
     return NextResponse.json(status, {
       headers: { "Cache-Control": "no-store" }

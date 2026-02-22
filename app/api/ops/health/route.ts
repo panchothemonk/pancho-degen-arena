@@ -29,7 +29,7 @@ function distinctDueRounds(
 function isAuthorized(req: Request): boolean {
   const key = process.env.OPS_API_KEY;
   if (!key) {
-    return true;
+    return process.env.NODE_ENV !== "production";
   }
   return req.headers.get("x-ops-key") === key;
 }

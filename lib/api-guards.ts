@@ -22,6 +22,10 @@ function sweepExpired(nowMs: number): void {
 }
 
 export function getClientIp(req: Request): string {
+  const cf = req.headers.get("cf-connecting-ip")?.trim();
+  if (cf) {
+    return cf;
+  }
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();
@@ -71,4 +75,3 @@ export function rateLimitExceededResponse(retryAfterSec: number, message = "Too 
     }
   );
 }
-

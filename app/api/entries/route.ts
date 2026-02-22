@@ -25,6 +25,11 @@ const ALLOWED_MARKETS = new Set(MARKET_CONFIGS.map((market) => market.key));
 const ALLOWED_STAKES = new Set([5, 10, 25, 50, 100, 250]);
 
 function getClientIp(req: Request): string | null {
+  const cfConnectingIp = req.headers.get("cf-connecting-ip");
+  if (cfConnectingIp?.trim()) {
+    return cfConnectingIp.trim();
+  }
+
   const xForwardedFor = req.headers.get("x-forwarded-for");
   if (xForwardedFor) {
     const first = xForwardedFor.split(",")[0]?.trim();
@@ -33,12 +38,19 @@ function getClientIp(req: Request): string | null {
     }
   }
 
-  const realIp = req.headers.get("x-real-ip") ?? req.headers.get("cf-connecting-ip");
+  const realIp = req.headers.get("x-real-ip");
   return realIp?.trim() || null;
 }
 
 export async function POST(req: Request) {
   try {
+    if (process.env.NODE_ENV === "production" && process.env.NEXT_PUBLIC_USE_ONCHAIN_PROGRAM !== "true") {
+      return NextResponse.json(
+        { error: "Real-money off-chain custody mode is disabled in production. Enable on-chain program mode." },
+        { status: 503 }
+      );
+    }
+
     const body = (await req.json()) as {
       roundId: string;
       market: string;
