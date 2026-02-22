@@ -1,0 +1,20 @@
+[package]
+name = "pancho_pvp"
+version = "0.1.0"
+description = "Pancho PvP on-chain escrow and settlement"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib", "lib"]
+name = "pancho_pvp"
+
+[features]
+default = []
+no-entrypoint = []
+no-idl = []
+no-log-ix-name = []
+cpi = ["no-entrypoint"]
+idl-build = ["anchor-lang/idl-build"]
+
+[dependencies]
+anchor-lang = { version = "0.31.1", default-features = false, features = ["init-if-needed"] }

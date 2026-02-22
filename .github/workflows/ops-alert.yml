@@ -1,0 +1,32 @@
+name: Ops Alert Check
+
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+jobs:
+  alert-check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Run ops alert check
+        env:
+          OPS_BASE: ${{ secrets.OPS_BASE }}
+          OPS_API_KEY: ${{ secrets.OPS_API_KEY }}
+          OPS_ALERT_WEBHOOK_URL: ${{ secrets.OPS_ALERT_WEBHOOK_URL }}
+          OPS_ALERT_MAX_LAG_MS: "180000"
+          OPS_ALERT_PENDING_ROUNDS: "3"
+        run: npm run ops:alert

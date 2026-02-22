@@ -1,0 +1,18 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "pancho-degen-arena",
+  "main": ".open-next/worker.js",
+  "compatibility_date": "2026-02-13",
+  "compatibility_flags": ["nodejs_compat", "global_fetch_strictly_public"],
+  "d1_databases": [
+    {
+      "binding": "PANCHO_SIM_DB",
+      "database_name": "pancho-sim-db",
+      "database_id": "03906442-1fd9-49f8-8a3c-d5c5b46a5a70"
+    }
+  ],
+  "assets": {
+    "directory": ".open-next/assets",
+    "binding": "ASSETS"
+  }
+}
