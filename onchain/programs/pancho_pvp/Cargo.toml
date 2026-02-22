@@ -18,3 +18,4 @@ idl-build = ["anchor-lang/idl-build"]
 
 [dependencies]
 anchor-lang = { version = "0.31.1", default-features = false, features = ["init-if-needed"] }
+hex-literal = "0.4"

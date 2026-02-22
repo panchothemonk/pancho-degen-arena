@@ -26,6 +26,9 @@ export function getClientIp(req: Request): string {
   if (cf) {
     return cf;
   }
+  if (process.env.NODE_ENV === "production") {
+    return "unknown";
+  }
   const forwarded = req.headers.get("x-forwarded-for");
   if (forwarded) {
     const first = forwarded.split(",")[0]?.trim();

@@ -3,13 +3,14 @@ use anchor_lang::prelude::*;
 declare_id!("52nguesHaBuF4psFr2uybVnW4angLW2ZtsBRSRmdF8k3");
 
 const BPS_DENOMINATOR: u64 = 10_000;
+const INITIAL_ADMIN: Pubkey = pubkey!("Dkm5UeGTaeXDkauBMtNwbHGw7q2aXbrqb9HBQVN5GFx8");
 const SIDE_UP: u8 = 0;
 const SIDE_DOWN: u8 = 1;
 const SIDE_NONE: u8 = 255;
 const ROUND_OPEN: u8 = 0;
 const ROUND_LOCKED: u8 = 1;
 const ROUND_SETTLED: u8 = 2;
-const LOCK_GRACE_SECONDS: i64 = 45;
+const LOCK_GRACE_SECONDS: i64 = 180;
 
 #[program]
 pub mod pancho_pvp {
@@ -20,6 +21,9 @@ pub mod pancho_pvp {
         fee_bps: u16,
         oracle_max_age_sec: u32,
         oracle_program: Pubkey,
+        oracle_account_sol: Pubkey,
+        oracle_account_btc: Pubkey,
+        oracle_account_eth: Pubkey,
     ) -> Result<()> {
         require!(fee_bps <= 1_500, PanchoError::InvalidFeeBps);
 
@@ -29,6 +33,9 @@ pub mod pancho_pvp {
         config.fee_bps = fee_bps;
         config.oracle_max_age_sec = oracle_max_age_sec;
         config.oracle_program = oracle_program;
+        config.oracle_account_sol = oracle_account_sol;
+        config.oracle_account_btc = oracle_account_btc;
+        config.oracle_account_eth = oracle_account_eth;
         config.paused = false;
         config.bump = ctx.bumps.config;
 
@@ -57,6 +64,19 @@ pub mod pancho_pvp {
         Ok(())
     }
 
+    pub fn set_oracle_accounts(
+        ctx: Context<SetOracleAccounts>,
+        oracle_account_sol: Pubkey,
+        oracle_account_btc: Pubkey,
+        oracle_account_eth: Pubkey,
+    ) -> Result<()> {
+        let config = &mut ctx.accounts.config;
+        config.oracle_account_sol = oracle_account_sol;
+        config.oracle_account_btc = oracle_account_btc;
+        config.oracle_account_eth = oracle_account_eth;
+        Ok(())
+    }
+
     pub fn create_round(
         ctx: Context<CreateRound>,
         market: u8,
@@ -71,6 +91,16 @@ pub mod pancho_pvp {
 
         let now = Clock::get()?.unix_timestamp;
         require!(lock_ts > now, PanchoError::InvalidSchedule);
+        require!(market <= 2, PanchoError::InvalidMarket);
+
+        let expected_oracle = expected_oracle_account(&ctx.accounts.config, market)?;
+        require_keys_eq!(
+            oracle_price_account,
+            expected_oracle,
+            PanchoError::UnexpectedOracleAccount
+        );
+        let expected_feed = expected_feed_id(market)?;
+        require!(feed_id == expected_feed, PanchoError::InvalidFeedId);
 
         let round = &mut ctx.accounts.round;
         round.round_id = round_id;
@@ -239,11 +269,18 @@ pub mod pancho_pvp {
             .up_total
             .checked_add(round.down_total)
             .ok_or(PanchoError::MathOverflow)?;
-        round.fee_lamports = total
-            .checked_mul(ctx.accounts.config.fee_bps as u64)
-            .ok_or(PanchoError::MathOverflow)?
-            .checked_div(BPS_DENOMINATOR)
-            .ok_or(PanchoError::MathOverflow)?;
+        let should_charge_fee = round.winner_side != SIDE_NONE
+            && round.start_price != 0
+            && round.end_price != 0;
+        round.fee_lamports = if should_charge_fee {
+            total
+                .checked_mul(ctx.accounts.config.fee_bps as u64)
+                .ok_or(PanchoError::MathOverflow)?
+                .checked_div(BPS_DENOMINATOR)
+                .ok_or(PanchoError::MathOverflow)?
+        } else {
+            0
+        };
         round.distributable_lamports = total
             .checked_sub(round.fee_lamports)
             .ok_or(PanchoError::MathOverflow)?;
@@ -322,6 +359,30 @@ fn proportion(numerator: u64, total_out: u64, total_in: u64) -> Result<u64> {
         .ok_or(error!(PanchoError::MathOverflow))?
         .checked_div(total_in)
         .ok_or(error!(PanchoError::MathOverflow))
+}
+
+fn expected_oracle_account(config: &GlobalConfig, market: u8) -> Result<Pubkey> {
+    match market {
+        0 => Ok(config.oracle_account_sol),
+        1 => Ok(config.oracle_account_btc),
+        2 => Ok(config.oracle_account_eth),
+        _ => Err(error!(PanchoError::InvalidMarket)),
+    }
+}
+
+fn expected_feed_id(market: u8) -> Result<[u8; 32]> {
+    match market {
+        0 => Ok(hex_literal::hex!(
+            "ef0d8b6fda2ceba41da15d4095d1da392a0d2f8ed0c6c7bc0f4cfac8c280b56d"
+        )),
+        1 => Ok(hex_literal::hex!(
+            "e62df6c8b4a85fe1a67db44dc12de5db330f7ac66b72dc658afedf0f4a415b43"
+        )),
+        2 => Ok(hex_literal::hex!(
+            "ff61491a931112ddf1bd8147cd1b641375f79f5825126d665480874634fd0ace"
+        )),
+        _ => Err(error!(PanchoError::InvalidMarket)),
+    }
 }
 
 fn read_legacy_pyth_price(
@@ -471,7 +532,7 @@ struct OraclePrice {
 
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
-    #[account(mut)]
+    #[account(mut, address = INITIAL_ADMIN)]
     pub admin: Signer<'info>,
     /// CHECK: destination treasury wallet
     pub treasury: UncheckedAccount<'info>,
@@ -512,6 +573,19 @@ pub struct SetTreasury<'info> {
     pub config: Account<'info, GlobalConfig>,
     /// CHECK: destination treasury wallet
     pub new_treasury: UncheckedAccount<'info>,
+}
+
+#[derive(Accounts)]
+pub struct SetOracleAccounts<'info> {
+    #[account(mut)]
+    pub admin: Signer<'info>,
+    #[account(
+        mut,
+        seeds = [b"config"],
+        bump = config.bump,
+        has_one = admin
+    )]
+    pub config: Account<'info, GlobalConfig>,
 }
 
 #[derive(Accounts)]
@@ -653,6 +727,9 @@ pub struct GlobalConfig {
     pub admin: Pubkey,
     pub treasury: Pubkey,
     pub oracle_program: Pubkey,
+    pub oracle_account_sol: Pubkey,
+    pub oracle_account_btc: Pubkey,
+    pub oracle_account_eth: Pubkey,
     pub fee_bps: u16,
     pub oracle_max_age_sec: u32,
     pub paused: bool,
@@ -754,6 +831,10 @@ pub enum PanchoError {
     InvalidSchedule,
     #[msg("Invalid side")]
     InvalidSide,
+    #[msg("Invalid market")]
+    InvalidMarket,
+    #[msg("Invalid feed id for market")]
+    InvalidFeedId,
     #[msg("Invalid stake")]
     InvalidStake,
     #[msg("Round is not open")]
