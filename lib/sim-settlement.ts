@@ -83,7 +83,8 @@ async function settleRound(entries: SimEntry[]): Promise<SimRoundSettlementSnaps
   const up = entries.filter((item) => item.direction === "UP");
   const down = entries.filter((item) => item.direction === "DOWN");
   const totalCents = entries.reduce((sum, item) => sum + Math.round(item.stakeBucks * 100), 0);
-  const feeCents = Math.floor((totalCents * FEE_BPS) / 10_000);
+  const isRefundRound = up.length === 0 || down.length === 0 || endSnapshot.price === startSnapshot.price;
+  const feeCents = isRefundRound ? 0 : Math.floor((totalCents * FEE_BPS) / 10_000);
   const distributableCents = Math.max(0, totalCents - feeCents);
 
   let mode: "WIN" | "REFUND" = "WIN";
@@ -134,7 +135,7 @@ async function settleRound(entries: SimEntry[]): Promise<SimRoundSettlementSnaps
 
 function buildRefundSettlement(entries: SimEntry[]): SimRoundSettlementSnapshot {
   const totalCents = entries.reduce((sum, item) => sum + Math.round(item.stakeBucks * 100), 0);
-  const feeCents = Math.floor((totalCents * FEE_BPS) / 10_000);
+  const feeCents = 0;
   const distributableCents = Math.max(0, totalCents - feeCents);
   const payoutsByEntryId = proRataCents(
     entries.map((item) => ({ entryId: item.id, cents: Math.round(item.stakeBucks * 100) })),

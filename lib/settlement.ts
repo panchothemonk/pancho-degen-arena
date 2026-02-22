@@ -256,10 +256,11 @@ async function createProcessingSettlement(
   let winnerSide: "UP" | "DOWN" | undefined;
   let payoutRecipients: Recipient[] = [];
 
-  const feeLamports = Math.floor((totalLamports * FEE_BPS) / 10_000);
+  const isRefundRound = upLamports === 0 || downLamports === 0 || endPrice === startPrice;
+  const feeLamports = isRefundRound ? 0 : Math.floor((totalLamports * FEE_BPS) / 10_000);
   const distributable = Math.max(0, totalLamports - feeLamports);
 
-  if (upLamports === 0 || downLamports === 0 || endPrice === startPrice) {
+  if (isRefundRound) {
     mode = "REFUND";
     const merged = new Map<string, number>();
     for (const entry of entries) {

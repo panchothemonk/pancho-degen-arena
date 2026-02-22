@@ -7,7 +7,8 @@ export const PANCHO_PROGRAM_ID = new PublicKey(
 
 export const JOIN_ROUND_DISCRIMINATOR = Buffer.from([191, 222, 86, 25, 234, 174, 157, 249]);
 export const CLAIM_DISCRIMINATOR = Buffer.from([62, 198, 214, 193, 213, 159, 108, 210]);
-const ROUND_ACCOUNT_DISCRIMINATOR = Buffer.from([190, 136, 93, 11, 235, 95, 57, 251]);
+// Must match current Anchor discriminator for account:Round.
+const ROUND_ACCOUNT_DISCRIMINATOR = Buffer.from([87, 127, 165, 51, 73, 78, 116, 174]);
 const POSITION_ACCOUNT_DISCRIMINATOR = Buffer.from([170, 188, 143, 228, 122, 64, 247, 208]);
 
 export type OnchainRoundState = {
