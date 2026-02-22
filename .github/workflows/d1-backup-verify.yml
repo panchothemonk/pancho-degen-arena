@@ -27,7 +27,7 @@ jobs:
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
           PANCHO_D1_DB_NAME: pancho-sim-db
-        run: npm run ops:backup:d1
+        run: node scripts/d1-backup.mjs
 
       - name: Verify latest backup
-        run: npm run ops:backup:verify
+        run: node scripts/verify-latest-backup.mjs
