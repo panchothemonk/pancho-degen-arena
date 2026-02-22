@@ -124,7 +124,7 @@ async function buildWalletResults(wallet: string, walletEntries: SimEntry[], pau
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
-    const ipRate = checkRateLimit({
+    const ipRate = await checkRateLimit({
       key: `sim-results:ip:${ip}`,
       limit: Number(process.env.PANCHO_RL_SIM_RESULTS_IP_LIMIT ?? 80),
       windowMs: Number(process.env.PANCHO_RL_SIM_RESULTS_IP_WINDOW_MS ?? 10_000)
@@ -145,7 +145,7 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
     }
 
-    const walletRate = checkRateLimit({
+    const walletRate = await checkRateLimit({
       key: `sim-results:wallet:${wallet}`,
       limit: Number(process.env.PANCHO_RL_SIM_RESULTS_WALLET_LIMIT ?? 30),
       windowMs: Number(process.env.PANCHO_RL_SIM_RESULTS_WALLET_WINDOW_MS ?? 10_000)

@@ -38,7 +38,7 @@ function isAuthorized(req: Request): boolean {
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
-    const ipRate = checkRateLimit({
+    const ipRate = await checkRateLimit({
       key: `ops-health:ip:${ip}`,
       limit: Number(process.env.PANCHO_RL_OPS_HEALTH_IP_LIMIT ?? 50),
       windowMs: Number(process.env.PANCHO_RL_OPS_HEALTH_IP_WINDOW_MS ?? 10_000)

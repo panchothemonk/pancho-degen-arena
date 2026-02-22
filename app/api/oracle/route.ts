@@ -7,7 +7,7 @@ export const dynamic = "force-dynamic";
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
-    const rate = checkRateLimit({
+    const rate = await checkRateLimit({
       key: `oracle:ip:${ip}`,
       limit: Number(process.env.PANCHO_RL_ORACLE_IP_LIMIT ?? 100),
       windowMs: Number(process.env.PANCHO_RL_ORACLE_IP_WINDOW_MS ?? 10_000)

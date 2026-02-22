@@ -23,7 +23,7 @@ export async function POST(req: Request) {
     }
 
     const ip = getClientIp(req);
-    const ipRate = checkRateLimit({
+    const ipRate = await checkRateLimit({
       key: `sim-entries:ip:${ip}`,
       // Shared home/mobile IPs can have multiple legit players; keep this generous by default.
       limit: Number(process.env.PANCHO_RL_SIM_ENTRIES_IP_LIMIT ?? 150),
@@ -110,7 +110,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Invalid wallet address" }, { status: 400 });
     }
 
-    const walletRate = checkRateLimit({
+    const walletRate = await checkRateLimit({
       key: `sim-entries:wallet:${body.wallet}`,
       limit: Number(process.env.PANCHO_RL_SIM_ENTRIES_WALLET_LIMIT ?? 20),
       windowMs: Number(process.env.PANCHO_RL_SIM_ENTRIES_WALLET_WINDOW_MS ?? 10_000)

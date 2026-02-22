@@ -75,7 +75,7 @@ async function computeStatus(): Promise<PublicStatus> {
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
-    const rate = checkRateLimit({
+    const rate = await checkRateLimit({
       key: `status:ip:${ip}`,
       limit: Number(process.env.PANCHO_RL_STATUS_IP_LIMIT ?? 80),
       windowMs: Number(process.env.PANCHO_RL_STATUS_IP_WINDOW_MS ?? 10_000)

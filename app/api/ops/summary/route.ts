@@ -48,7 +48,7 @@ function distinctDueRounds(
 export async function GET(req: Request) {
   try {
     const ip = getClientIp(req);
-    const ipRate = checkRateLimit({
+    const ipRate = await checkRateLimit({
       key: `ops-summary:ip:${ip}`,
       limit: Number(process.env.PANCHO_RL_OPS_SUMMARY_IP_LIMIT ?? 30),
       windowMs: Number(process.env.PANCHO_RL_OPS_SUMMARY_IP_WINDOW_MS ?? 10_000)
