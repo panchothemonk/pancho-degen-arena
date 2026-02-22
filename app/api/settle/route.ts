@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
-import { timingSafeEqual } from "crypto";
 import { settleDueRounds } from "@/lib/settlement";
 import { auditLog } from "@/lib/audit";
+import { safeHeaderSecretMatch } from "@/lib/auth";
 
 export const runtime = "nodejs";
 
@@ -23,11 +23,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const expectedBuffer = Buffer.from(requiredKey, "utf8");
-  const providedBuffer = Buffer.from(providedKey, "utf8");
-  const valid =
-    expectedBuffer.length === providedBuffer.length &&
-    timingSafeEqual(expectedBuffer, providedBuffer);
+  const valid = safeHeaderSecretMatch(requiredKey, providedKey);
   if (!valid) {
     await auditLog("WARN", "settle.unauthorized");
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
